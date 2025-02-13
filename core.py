@@ -12,8 +12,6 @@ class Player:
         self.play_area = {
             'heroes': [],
             'allies': [],
-            #todo: attachments go on cards, not the play area and not the player.
-            # 'attachments': []
         }
         self.engaged_enemies = []
         self.new_allies_this_round = []
@@ -27,8 +25,6 @@ class Player:
             f"Discard: {len(self.discard_pile)} cards\n"
             f"Heroes: {[h.title for h in self.play_area['heroes']]}\n"
             f"Allies: {[a.title for a in self.play_area['allies']]}\n"
-            #todo: attachments are on cards, not players
-            # f"Attachments: {[at.title for at in self.play_area['attachments']]}\n"
         )
     
     def draw_card(self, game_state, num=1):
@@ -338,8 +334,8 @@ class EventSystem:
     def __init__(self):
         self.hooks = defaultdict(list)
         
-    def register_hook(self, phase, event_type, callback):
-        self.hooks[(phase, event_type)].append(callback)
+    def register_hook(self, event_type, callback):
+        self.hooks[(event_type)].append(callback)
         
     def trigger_event(self, event_type, context):
         for callback in self.hooks.get((event_type), []):
