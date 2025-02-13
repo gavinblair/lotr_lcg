@@ -10,7 +10,7 @@ class Boromir(Hero):
 
     def play(self, game_state, controller):
         super().play(game_state, controller)
-        game_state.event_system.register_hook("CombatPhase", "CalculateAttack", self.modify_gondor_attack)
+        game_state.event_system.register_hook("CalculateAttack", self.modify_gondor_attack)
 
     def modify_gondor_attack(self, context):
         attacker = context.get('attacker')
@@ -36,9 +36,9 @@ class Galadriel(Hero):
 
     def play(self, game_state, controller):
         super().play(game_state, controller)
-        game_state.event_system.register_hook("QuestPhase", "BeforeQuestExhaustion", self.prevent_ally_exhaustion)
-        game_state.event_system.register_hook("PlanningPhase", "PlayerActions", self.offer_action)
-        game_state.event_system.register_hook("RefreshPhase", "PhaseEnd", self.reset_used)
+        game_state.event_system.register_hook("BeforeQuestExhaustion", self.prevent_ally_exhaustion)
+        game_state.event_system.register_hook("PlayerActions", self.offer_action)
+        game_state.event_system.register_hook("RefreshPhaseEnd", self.reset_used)
 
     def prevent_ally_exhaustion(self, context):
         character = context['character']
