@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
 from collections import defaultdict
 import random
+from rich.console import Console
+from rich.panel import Panel
+console = Console()
 
 class Player:
     def __init__(self, name):
@@ -16,31 +19,30 @@ class Player:
         self.engaged_enemies = []
         self.new_allies_this_round = []
         
-    def toString(self, game_state):
-        return (
-            f"Player: {self.name}\n"
-            f"Threat: {self.threat}\n"
-            f"Hand: {[c.title for c in self.hand]}\n"
-            f"Deck: {len(self.deck)} cards\n"
-            f"Discard: {len(self.discard_pile)} cards\n"
-            f"Heroes: {[h.title for h in self.play_area['heroes']]}\n"
-            f"Allies: {[a.title for a in self.play_area['allies']]}\n"
-        )
+    def render(self, game_state):
+        console.print(f"Player: {self.name}")
+        console.print(f"Threat: {self.threat}")
+        console.print(f"Hand: {[c.title for c in self.hand]}")
+        console.print(f"Deck: {len(self.deck)} cards")
+        console.print(f"Discard: {len(self.discard_pile)} cards")
+        console.print(f"Heroes: {[h.title for h in self.play_area['heroes']]}")
+        console.print(f"Allies: {[a.title for a in self.play_area['allies']]}")
     
     def draw_card(self, game_state, num=1):
         for _ in range(num):
             game_state.event_system.trigger_event("BeforeDrawCard", {"player": self})
-            print("Drawing a card.")
+            console.print(f"[yellow]{self.name}[/yellow] is drawing a card...")
             if len(self.deck) == 0:
-                print("The deck is empty. Reshuffling the discard into the deck.")
+                console.print("\tThe deck is empty. Reshuffling the discard into the deck.")
                 self.reshuffle_discard(game_state)
                 if len(self.deck) == 0:  # Still empty after reshuffle
-                    print("Still no cards in the deck, this means you lose!")
+                    console.print("[red]Still no cards in the deck, this means you lose![/red]")
                     self.threat = 50  # Immediate loss condition
                     return
             if len(self.deck) > 0:
                 drawn_card = self.deck.pop()
-                print(f"Drawn card: {drawn_card.title}")
+                colour = drawn_card.getColour()
+                console.print(f"\tDrawn card: [{colour}]{drawn_card.title}[/{colour}]")
                 self.hand.append(drawn_card)
                 game_state.event_system.trigger_event("AfterDrawCard", {"player": self, "card": drawn_card})
                 
@@ -126,23 +128,29 @@ class Player:
         return controller.choose_card_to_play(self)
         
     def select_defender(self, enemy, controller):
-        #todo: hook for "before selecting a defender"
-        valid_defenders = [
-            c for c in self.play_area['heroes'] + self.play_area['allies']
-            if not c.exhausted and c.can_defend()
-        ]
-        if not valid_defenders:
-            return None
-            
-        output = controller.choose_defender(self, enemy, valid_defenders)
-        #todo: hook for "after selecting a defender"
-        return output
+        game_state = controller.game.game_state
+        game_state.event_system.trigger_event("BeforeSelectDefender", 
+            {"player": self, "enemy": enemy})
+        
+        valid_defenders = [c for c in self.play_area['heroes'] + self.play_area['allies']
+                        if not c.exhausted and c.can_defend()]
+        
+        defender = controller.choose_defender(self, enemy, valid_defenders)
+        
+        game_state.event_system.trigger_event("AfterSelectDefender",
+            {"player": self, "enemy": enemy, "defender": defender})
+        return defender
     
     def select_location_to_travel(self, locations, controller):
-        #todo: hook for "before selecting a location to travel"
-        output = controller.choose_location_to_travel(locations)
-        #todo: hook for "after selecting a location to travel"
-        return output
+        game_state = controller.game.game_state
+        game_state.event_system.trigger_event("BeforeSelectTravelLocation",
+            {"player": self, "locations": locations})
+        
+        choice = controller.choose_location_to_travel(locations)
+        
+        game_state.event_system.trigger_event("AfterSelectTravelLocation",
+            {"player": self, "location": choice})
+        return choice
 
     def play(self, game_state, controller):
         """Activate this quest card"""
@@ -174,31 +182,36 @@ class Game:
             player.calculate_threat()  # Set initial threat
         
     def run(self):
+        console.rule("Starting game!")
+        console.print(f"Active Quest: {self.game_state.active_quest.title}")
+        console.print(f"Required Progress: {self.game_state.active_quest.required_progress}")
         #first every player draw 5 cards
+        
+        console.rule("Setup")
         for player in self.players:
             player.draw_card(self.game_state, 5)
 
         while not self.check_game_over():
             for phase in self.phases:
-                print(phase.toString(self.game_state))
                 self.game_state.current_phase = type(phase).__name__
                 phase.execute(self.game_state, self.controller)
-            print(f"Completed round {self.game_state.round_number}")
+                phase.render(self.game_state)
+            console.print(f"[green]Completed round {self.game_state.round_number}[/green]")
                 
     def check_game_over(self):
         # Check loss conditions first
         for player in self.game_state.players:
             if player.threat >= 50:
-                print(f"Game Over! {player.name} reached 50 threat!")
+                console.print(f"[red]Game Over![/red] [yellow]{player.name}[/yellow] reached 50 threat!")
                 return True
             if not any(isinstance(card, Hero) for card in player.play_area.get('heroes', [])):
-                print(f"Game Over! {player.name} has no surviving heroes!")
+                console.print(f"[red]Game Over![/red] [yellow]{player.name}[/yellow] has no surviving heroes!")
                 return True
 
         # Check victory condition
         if (self.game_state.active_quest and 
             self.game_state.active_quest.progress >= self.game_state.active_quest.required_progress):
-            print(f"Victory! Completed quest: {self.game_state.active_quest.title}")
+            console.print(f"[green]Victory![/green] Completed quest: [yellow]{self.game_state.active_quest.title}[/yellow]")
             return True
             
         return False
@@ -218,31 +231,35 @@ class GameState:
         self.event_system = event_system
         self.active_quest = None
         
-    def toString(self):
-        return (
-            f"Game State (Round {self.round_number})\n"
-            f"Phase: {self.current_phase}\n"
-            f"Quest Progress: {self.quest_progress}\n"
-            f"Active Location: {self.active_location.title if self.active_location else 'None'}\n"
-            f"Staging Area: {[c.title for c in self.staging_area]}\n"
-            f"Encounter Deck: {len(self.encounter_deck)} cards\n"
-            f"Victory Display: {[c.title for c in self.victory_display]}"
-        )
+    def render(self):
+        console.print(f"Game State (Round {self.round_number})")
+        console.print(f"Phase: {self.current_phase}")
+        console.print(f"Quest Progress: {self.active_quest.progress}")
+        console.print(f"Active Location: {self.active_location.title if self.active_location else 'None'}")
+        console.print(f"Staging Area: {[c.title for c in self.staging_area]}")
+        console.print(f"Encounter Deck: {len(self.encounter_deck)} cards")
+        # console.print(f"Victory Display: {[c.title for c in self.victory_display]}")
         
     def select_character(self, player):
         # Simple implementation - could be expanded with UI
         return next((c for c in player.play_area['allies'] + player.play_area['heroes']), None)
-    def draw_encounter_card(self):
-        if not self.encounter_deck:
-            #todo: hook for "before reshuffling the encounter deck"
-            self.encounter_deck = self.encounter_discard
-            self.encounter_discard = []
-            random.shuffle(self.encounter_deck)
-            #todo: hook for "after reshuffling the encounter deck"
-        #todo: hook for "before drawing a card from the encounter deck"
-        output = self.encounter_deck.pop() if self.encounter_deck else None
-        #todo: hook for "after drawing a card from the encounter deck"
-        return output
+    
+    def draw_encounter_card(game_state):
+        if not game_state.encounter_deck:
+            game_state.event_system.trigger_event("BeforeEncounterReshuffle",
+                {"game_state": game_state})
+            game_state.encounter_deck = game_state.encounter_discard
+            game_state.encounter_discard = []
+            random.shuffle(game_state.encounter_deck)
+            game_state.event_system.trigger_event("AfterEncounterReshuffle",
+                {"game_state": game_state})
+        
+        game_state.event_system.trigger_event("BeforeEncounterDraw",
+            {"game_state": game_state})
+        card = game_state.encounter_deck.pop() if game_state.encounter_deck else None
+        game_state.event_system.trigger_event("AfterEncounterDraw",
+            {"game_state": game_state, "card": card})
+        return card
 
 class GameController:
     def __init__(self, game):
@@ -250,13 +267,20 @@ class GameController:
         self.current_choices = []
         
     def display_game_state(self, player):
+        self.game.game_state.render()
         """Show current game state to player"""
-        print(f"\n--- {player.name}'s Turn ---")
-        print(f"Threat: {player.threat}")
-        print("Hand:", [c.title for c in player.hand])
-        print("Heroes:", [f"{h.title} (WP:{h.willpower})" for h in player.play_area['heroes']])
-        print("Allies:", [a.title for a in player.play_area['allies']])
-        print("Staging Area:", [c.title for c in self.game.game_state.staging_area])
+        console.rule(f"[yellow]{player.name}[/yellow]'s Turn")
+        console.print(f"Threat: [red]{player.threat}[/red]")
+        console.print("Hand:")
+        for i,card in enumerate(player.hand, start=1):
+            colour = f"{card.getColour()}"
+            console.print(f"\t{i}): [{colour}]{card.title}[/{colour}]")
+        console.print("Heroes:")
+        for h,hero in enumerate(player.play_area['heroes'], start=i):
+            colour = f"{card.getColour()}"
+            console.print(f"\t{h}): [{hero.getColour()}]{hero.title}[/{hero.getColour()}] (WP:{hero.willpower})")
+        console.log("Allies:", [a.title for a in player.play_area['allies']])
+        
     
     def choose_player(self, players):
         """Let player choose from available players"""
@@ -265,9 +289,9 @@ class GameController:
         return players[options.index(choice)]
 
     def get_choice(self, prompt, options, multi_select=False):
-        print("\n" + prompt)
+        console.log("\n" + prompt)
         for i, option in enumerate(options, 1):
-            print(f"{i}. {option}")
+            console.log(f"{i}. {option}")
             
         while True:
             choice = input("Enter choice(s), comma-separated: " if multi_select else "Enter choice: ")
@@ -278,7 +302,7 @@ class GameController:
             else:
                 if choice.isdigit() and 1 <= int(choice) <= len(options):
                     return [int(choice)-1]
-            print("Invalid choice, try again")
+            console.log("Invalid choice, try again")
 
     def choose_card_to_play(self, player):
         """Let player select a card to play or pass"""
@@ -380,30 +404,43 @@ class Card(ABC):
         self.keywords = set()  # To store card-specific keywords
         self.committed = False  # Track quest commitment
         self.can_attack = True  # Default for most characters
+
+    def getColour(self):
+        if self.sphere == 'Leadership':
+            return 'purple'
+        elif self.sphere == 'Tactics':
+            return 'red'
+        elif self.sphere == 'Spirit':
+            return 'blue'
+        elif self.sphere == 'Lore':
+            return 'green'
+        return 'yellow'
         
-    def toString(self, game_state):  # User-friendly representation
-        return (
-            f"Title: {self.title}\n"
-            f"Description: {self.description}\n"
-            f"Cost: {self.cost}\n"
-            f"Sphere: {self.sphere}\n"
-            f"Keywords: {', '.join(self.keywords)}\n"
-            f"Tokens: {dict(self.tokens)}\n"
-            f"Attachments: {len(self.attachments)} items\n"
-        )
+    def render(self, game_state):  # User-friendly representation
+        console.print(f"Title: {self.title}")
+        console.print(f"Description: {self.description}")
+        console.print(f"Cost: {self.cost}")
+        console.print(f"Sphere: [{self.getColour()}]{self.sphere}")
+        console.print(f"Keywords: {', '.join(self.keywords)}")
+        console.print(f"Tokens: {dict(self.tokens)}")
+        console.print(f"Attachments: {len(self.attachments)} items")
         
     def add_token(self, token_type, amount=1):
-        #todo: hook for "before adding a {token_type} token to a card"
+        game_state.event_system.trigger_event(f"BeforeAddToken:{token_type}",
+            {"card": self, "amount": amount})
         self.tokens[token_type] += amount
-        #todo: hook for "after adding a {token_type} token to a card"
+        game_state.event_system.trigger_event(f"AfterAddToken:{token_type}",
+            {"card": self, "amount": amount})
         
     def remove_token(self, token_type, amount=1):
-        #todo: hook for "before removing a {token_type} token from a card"
+        game_state.event_system.trigger_event(f"BeforeRemoveToken:{token_type}",
+            {"card": self, "amount": amount})
         if self.tokens[token_type] >= amount:
             self.tokens[token_type] -= amount
         else:
             self.tokens[token_type] = 0
-        #todo: hook for "after removing a {token_type} token from a card"
+        game_state.event_system.trigger_event(f"AfterRemoveToken:{token_type}",
+            {"card": self, "amount": amount})
         
     def get_token_count(self, token_type):
         return self.tokens.get(token_type, 0)
@@ -471,15 +508,17 @@ class Hero(Card):
     def refresh_resources(self):
         # Generate 1 resource per round
         #stop suggesting that getting resources from a hero exhausts the hero. it does not.
+        console.log(f"Adding 1 [{self.getColour()}]{self.sphere}[/{self.getColour()}] resource to {self.title}")
         self.resources[self.sphere] += 1
         
     def on_exhaust(self):
         pass
             
-    def toString(self, game_state):  # todo: i want to be able to print any of these classes and get something useful back, like this:
-        return (f"Hero: {self.title} (Sphere: {self.sphere}, Willpower: {self.willpower}, "
-                f"Attack: {self.attack}, Defense: {self.defense}, Hit Points: {self.hit_points}, "
-                f"Resources: {self.resources}, Exhausted: {self.exhausted})")
+    def render(self, game_state):  # todo: i want to be able to print any of these classes and get something useful back, like this:
+        console.print(f"Hero: {self.title}")
+        console.print(f"[{self.getColour()}]{self.sphere}[/{self.getColour()}]")
+        console.print(f"Willpower: {self.willpower} | Attack: {self.attack} | Defense: {self.defense} | Hit Points: {self.hit_points}")
+        console.print(f"Resources: {self.resources}, Exhausted: {self.exhausted})")
 
 class ResourceAttachment(Card):
     def __init__(self, title, sphere, resource_type):
@@ -540,9 +579,11 @@ class Location(Card):
         )
         
     def add_progress(self, amount, game_state):
-        #todo: hook for "before adding progress to a location"
+        game_state.event_system.trigger_event("BeforeAddProgress",
+            {"location": self, "amount": amount})
         self.progress += amount
-        #todo: hook for "after adding progress to a location"
+        game_state.event_system.trigger_event("AfterAddProgress",
+            {"location": self, "amount": amount})
         if self.progress >= self.quest_points:
             self.on_explored(game_state)
             return True  # Location explored
@@ -565,17 +606,18 @@ class Attachment(Card):
         return False
         
     def get_valid_targets(self, game_state):
-        # Get all cards in play areas and staging area
         targets = []
-        
-        # Player play areas
+        # Player cards
         for player in game_state.players:
-            targets.extend(self.get_player_cards(player))
-            
-        # Staging area
-        targets.extend(game_state.staging_area)
-        
-        return targets
+            #todo: the attachment card itself should determine what valid targets are. some cards are for heroes only, etc.
+            targets += player.play_area['heroes']
+            targets += player.play_area['allies']
+            for card in player.play_area['heroes'] + player.play_area['allies']:
+                targets += card.attachments  # Attach to other attachments?
+        # Encounter cards
+        targets += game_state.staging_area
+        return [t for t in targets if self.can_attach_to(t)]
+
         
     def get_player_cards(self, player):
         return [
@@ -630,11 +672,14 @@ class Enemy(Card):
     def play(self, game_state, controller):
         pass
 
-    def on_engage(self, player, game_state):
+    def engage(self, player, game_state):
         self.engaged_player = player
+        game_state.staging_area.remove(self)
+        player.engaged_enemies.append(self)
 
 class ResourcePhase:
     def execute(self, game_state, controller):
+        console.rule("Resource Phase")
         game_state.event_system.trigger_event("ResourcePhaseStart", game_state)
         
         for player in game_state.players:
@@ -642,32 +687,26 @@ class ResourcePhase:
                 
         game_state.event_system.trigger_event("ResourcePhaseEnd", game_state)
 
-    def toString(self, game_state):
-        output = "Resource Phase\n"
+    def render(self, game_state):
         for player in game_state.players:
-            output = f"{output}{player.name}:\n"
+            console.print(f"Player: {player.name}")
             for hero in player.play_area['heroes']:
-                output = f"{output}{hero.title}:\n"
-                #todo: this is not working
+                console.print(f"[{hero.getColour()}]{hero.title}[/{hero.getColour()}]:")
                 for sphere in hero.resources:
-                    output = f"{output}{sphere}\n"
-        return (output)
+                    console.print(f"[{hero.getColour()}]{sphere}[/{hero.getColour()}]: {hero.resources[sphere]}")
 
 class QuestPhase:
     def execute(self, game_state, controller):
+        console.rule("Quest Phase")
         if not game_state.active_quest:
-            print("No active quest!")
+            console.log("No active quest!")
             return
         game_state.event_system.trigger_event("QuestPhaseStart", game_state)
         
         # Commit characters and handle exhaustion
-        #todo: call commit_characters somewhere for the player to choose who to commit.
         contributors = []
         for p in game_state.players:
-            for c in p.play_area['heroes'] + p.play_area['allies']:
-                #todo: we should not be checking for exhausted to decide if they are committed. check that they are committed specifically.
-                if not c.exhausted and c.can_quest():
-                    contributors.append(c)
+            self.commit_characters(player, controller)
         
         # Calculate willpower
         total_willpower = sum(c.willpower for c in contributors)
@@ -685,11 +724,12 @@ class QuestPhase:
                     game_state.active_location = None
             else:
                 game_state.quest_progress += net_progress
-                print(f"Added {net_progress} progress to {game_state.active_quest.title} "
+                console.log(f"Added {net_progress} progress to {game_state.active_quest.title} "
                       f"({game_state.active_quest.progress}/{game_state.active_quest.required_progress})")
         else:
-            #todo: the difference is added to the players' threat levels
-            pass
+            threat_increase = -net_progress
+            for player in game_state.players:
+                player.threat += threat_increase
 
                 
         for player in game_state.players:
@@ -712,34 +752,26 @@ class QuestPhase:
         
         game_state.event_system.trigger_event("QuestPhaseEnd", game_state)
 
-    def commit_characters(self, player, controller):
-        """Player selects characters to commit to the quest"""
-        while True:
-            available = [
-                c for c in player.play_area['heroes'] + player.play_area['allies']
-                if not c.committed and not c.exhausted and c.willpower > 0
-            ]
-            if not available:
-                break
-            
-            choice = controller.get_choice(
-                "Commit characters to quest:",
-                [f"Commit {c.title} (Willpower {c.willpower})" for c in available] + ["Finish"]
-            )
-            
-            if choice == "Finish":
-                break
-                
-            selected = available[choice]
-            selected.committed = True
-    
-    def toString(self, game_state):
-        return (
-            f"Quest Phase\n"
+    def commit_characters(controller, player):
+        # Controller method
+        available = [c for c in player.play_area['heroes'] + player.play_area['allies']
+                    if not c.exhausted and c.can_quest()]
+        
+        choices = controller.get_choice(
+            "Select characters to commit to quest:",
+            [f"{c.title} (Willpower {c.willpower})" for c in available],
+            multi_select=True
         )
+        
+        for idx in choices:
+            available[idx].committed = True
+    
+    def render(self, game_state):
+        pass
 
 class PlanningPhase:
     def execute(self, game_state, controller):
+        console.rule("Planning Phase")
         game_state.event_system.trigger_event("PlanningPhaseStart", game_state)
         for player in game_state.players:
             while True:
@@ -763,7 +795,7 @@ class PlanningPhase:
                             }
                         )
                 else:
-                    print("Can't afford this card!")
+                    console.log("Can't afford this card!")
             game_state.event_system.trigger_event("PlayerActions", {
                 "player": player,
                 "game_state": game_state,
@@ -771,13 +803,13 @@ class PlanningPhase:
             })
         game_state.event_system.trigger_event("PlanningPhaseEnd", game_state)
     
-    def toString(self, game_state):
-        return (
-            f"Planning Phase\n"
-        )
+    def render(self, game_state):
+        pass
 
 class TravelPhase:
     def execute(self, game_state, controller):
+        console.rule("Travel Phase")
+
         game_state.event_system.trigger_event("TravelPhaseStart", game_state)
         
         # Players may travel to a location
@@ -801,13 +833,13 @@ class TravelPhase:
         
         game_state.event_system.trigger_event("TravelPhaseEnd", game_state)
     
-    def toString(self, game_state):
-        return (
-            f"Travel Phase\n"
-        )
+    def render(self, game_state):
+        pass
 
 class EncounterPhase:
     def execute(self, game_state, controller):
+        console.rule("Encounter Phase")
+
         game_state.event_system.trigger_event("EncounterPhaseStart", game_state)
         
         # Reveal encounter cards
@@ -825,31 +857,30 @@ class EncounterPhase:
         # This could reveal 1 card per player or other logic
         return [game_state.encounter_deck.draw()]  # Simplified
         
-    def handle_engagement(self, player, game_state):
-        # Check which enemies engage with each player
+    def handle_engagement(self, game_state):
+        players_in_order = game_state.players[game_state.active_player_idx:] + \
+                      game_state.players[:game_state.active_player_idx]
+        game_state.event_system.trigger_event(
+            "BeforeEnemyEngagement",
+            {"enemy": enemy, "player": player}
+        )
         for enemy in list(game_state.staging_area):
             if isinstance(enemy, Enemy):
-                if player.threat >= enemy.engagement:
-                    game_state.event_system.trigger_event(
-                        "BeforeEnemyEngagement",
-                        {"enemy": enemy, "player": player}
-                    )
+                for player in players_in_order:
+                    if player.threat >= enemy.engagement:
+                        enemy.engage(player,game_state)
+                        break
                     
-                    game_state.staging_area.remove(enemy)
-                    player.engaged_enemies.append(enemy)
-                    enemy.on_engage(player, game_state)
-                    
-                    game_state.event_system.trigger_event(
-                        "AfterEnemyEngagement",
-                        {"enemy": enemy, "player": player}
-                    )
-    def toString(self, game_state):
-        return (
-            f"Encounter Phase\n"
-        )
-
+                game_state.event_system.trigger_event(
+                    "AfterEnemyEngagement",
+                    {"enemy": enemy, "player": player}
+                )
+    def render(self, game_state):
+        pass
 class CombatPhase:
     def execute(self, game_state, controller):
+        console.rule("Combat Phase")
+
         game_state.event_system.trigger_event("CombatPhaseStart", game_state)
         
         # First resolve enemy attacks
@@ -874,6 +905,10 @@ class CombatPhase:
         shadow_card = game_state.draw_encounter_card()
         if shadow_card and hasattr(shadow_card, "shadow_effect"):
             shadow_card.shadow_effect.apply(game_state, enemy)
+        
+        game_state.encounter_discard.append(shadow_card)
+        #todo: does that ^ remove it from the enemy card?
+
         game_state.event_system.trigger_event("ShadowCardRevealed", {"enemy": enemy, "shadow_card": shadow_card})
         
         # Determine defender
@@ -963,14 +998,13 @@ class CombatPhase:
             {"enemy": enemy, "player": player, "defender": defender}
         )
     
-    def toString(self, game_state):
-        return (
-            f"Combat Phase\n"
-        )
-
+    def render(self, game_state):
+        pass
 
 class RefreshPhase:
     def execute(self, game_state, controller):
+        console.rule("Refresh Phase")
+
         game_state.event_system.trigger_event("RefreshPhaseStart", game_state)
         
         # Ready all cards
@@ -997,10 +1031,7 @@ class RefreshPhase:
         for char in player.play_area['heroes'] + player.play_area['allies']:
             char.exhausted = False
 
-    def toString(self, game_state):
-        return (
-            f"Refresh Phase\n"
-        )
-        
+    def render(self, game_state):
+        pass        
 
 
