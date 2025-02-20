@@ -110,3 +110,38 @@ class Faramir(Ally):
                 target_player = controller.choose_player(game_state.players)
                 for character in target_player.play_area['heroes'] + target_player.play_area['allies']:
                     character.willpower += 1
+                    
+                    
+class Gandalf(Ally):
+    def __init__(self):
+        super().__init__("Gandalf", 5, "Neutral", 4, 4, 4, 4)
+        self.description = "At the end of the round, discard Gandalf. Response: After Gandalf enters play, choose one: draw 3 cards, deal 4 damage to an enemy in play, or reduce your threat by 5."
+        self.add_keyword("Istari")
+
+    def play(self, game_state, controller):
+        super().play(game_state, controller)
+        game_state.event_system.register_hook("AfterAllyPlayed", self.trigger_response)
+        game_state.event_system.register_hook("RefreshPhaseEnd", self.discard_gandalf)
+
+    def trigger_response(self, context):
+        if context['ally'] == self:
+            controller = context['controller']
+            choice_indices = controller.get_choice(
+                f"Choose Gandalf's response:",
+                ["Draw 3 cards", "Deal 4 damage to an enemy", "Reduce threat by 5"]
+            )
+            if choice_indices:
+                choice = choice_indices[0]
+                if choice == 0:  # Draw 3 cards
+                    context['player'].draw_card(context['game_state'], 3)
+                elif choice == 1:  # Deal 4 damage to an enemy
+                    enemies = [e for p in context['game_state'].players for e in p.engaged_enemies]
+                    target_enemy = controller.choose_enemy_to_attack(enemies)
+                    if target_enemy:
+                        target_enemy.hit_points -= 4
+                elif choice == 2:  # Reduce threat by 5
+                    context['player'].threat = max(0, context['player'].threat - 5)
+
+    def discard_gandalf(self, context):
+        context['player'].discard_pile.append(self)
+        context['player'].play_area['allies'].remove(self)
