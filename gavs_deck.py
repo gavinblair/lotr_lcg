@@ -145,3 +145,27 @@ class Gandalf(Ally):
     def discard_gandalf(self, context):
         context['player'].discard_pile.append(self)
         context['player'].play_area['allies'].remove(self)
+        
+class StewardOfGondor(Attachment):
+    def __init__(self):
+        super().__init__("Steward of Gondor", 2, "Leadership")
+        self.description = "Attach to a hero. Attached hero gains the Gondor trait. Action: Exhaust Steward of Gondor to add 2 resources to attached hero's resource pool."
+        self.add_keyword("Title")
+
+    def play(self, game_state, controller):
+        super().play(game_state, controller)
+        game_state.event_system.register_hook("PlayerActions", self.offer_action)
+
+    def offer_action(self, context):
+        player = context['player']
+        game_state = context['game_state']
+        controller = context['controller']
+        if self in player.play_area['attachments']:
+            choice_indices = controller.get_choice(
+                f"Use {self.title}'s action? (Exhaust to add 2 resources to attached hero's resource pool)",
+                ["Yes", "No"]
+            )
+            if choice_indices and choice_indices[0] == 0:  # First option ("Yes")
+                self.exhausted = True
+                attached_hero = self.attached_to
+                attached_hero.resources[self.sphere] += 2
