@@ -169,3 +169,27 @@ class StewardOfGondor(Attachment):
                 self.exhausted = True
                 attached_hero = self.attached_to
                 attached_hero.resources[self.sphere] += 2
+                
+class UnexpectedCourage(Attachment):
+    def __init__(self):
+        super().__init__("Unexpected Courage", 2, "Spirit")
+        self.description = "Attach to a hero. Action: Exhaust Unexpected Courage to ready attached hero."
+        self.add_keyword("Condition")
+
+    def play(self, game_state, controller):
+        super().play(game_state, controller)
+        game_state.event_system.register_hook("PlayerActions", self.offer_action)
+
+    def offer_action(self, context):
+        player = context['player']
+        game_state = context['game_state']
+        controller = context['controller']
+        if self in player.play_area['attachments']:
+            choice_indices = controller.get_choice(
+                f"Use {self.title}'s action? (Exhaust to ready attached hero)",
+                ["Yes", "No"]
+            )
+            if choice_indices and choice_indices[0] == 0:  # First option ("Yes")
+                self.exhausted = True
+                attached_hero = self.attached_to
+                attached_hero.exhausted = False
