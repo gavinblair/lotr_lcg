@@ -86,4 +86,27 @@ class Aragorn(Hero):
         if character == self and game_state.round_number == 1:
             context['prevent_exhaustion'] = True
             
-    
+class Faramir(Ally):
+    def __init__(self):
+        super().__init__("Faramir", 4, "Leadership", 2, 1, 2, 3)
+        self.description = "Exhaust Faramir to choose a player. Each character controlled by that player gets +1 Willpower until the end of the phase."
+        self.add_keyword("Gondor")
+        self.add_keyword("Ranger")
+
+    def play(self, game_state, controller):
+        super().play(game_state, controller)
+        game_state.event_system.register_hook("BeforeQuestResolution", self.boost_willpower)
+
+    def boost_willpower(self, context):
+        player = context['player']
+        controller = context['controller']
+        if not self.exhausted:
+            choice_indices = controller.get_choice(
+                f"Use {self.title}'s ability? (Exhaust to give +1 Willpower to each character controlled by a player)",
+                ["Yes", "No"]
+            )
+            if choice_indices and choice_indices[0] == 0:  # First option ("Yes")
+                self.exhausted = True
+                target_player = controller.choose_player(game_state.players)
+                for character in target_player.play_area['heroes'] + target_player.play_area['allies']:
+                    character.willpower += 1
