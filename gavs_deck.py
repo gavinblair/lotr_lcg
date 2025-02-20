@@ -68,3 +68,22 @@ class Galadriel(Hero):
     
     def reset_used(self, context):
         self.used_this_round = False
+        
+class Aragorn(Hero):
+    def __init__(self):
+        super().__init__("Aragorn", "Leadership", 12, 2, 3, 2, 5)
+        self.description = "Aragorn does not exhaust to quest during the first quest phase each round."
+        self.add_keyword("Dúnedain")
+        self.add_keyword("Noble")
+        self.add_keyword("Ranger")
+
+    def play(self, game_state, controller):
+        super().play(game_state, controller)
+        game_state.event_system.register_hook("BeforeQuestExhaustion", self.prevent_exhaustion)
+
+    def prevent_exhaustion(self, context):
+        character = context['character']
+        if character == self and game_state.round_number == 1:
+            context['prevent_exhaustion'] = True
+            
+    
