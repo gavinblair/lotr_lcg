@@ -386,13 +386,14 @@ class EventSystem:
             callback(context)
 
 class Effect:
-    def __init__(self, duration=None):
-        self.duration = duration  # None = permanent, "phase" = until phase end, etc.
-        
+    def __init__(self, expiration_event=None):
+        self.expiration_event = expiration_event
+
     def apply(self, game_state, target=None):
-        pass
-        
-    def remove(self, game_state, target=None):
+        if self.expiration_event:
+            game_state.event_system.register_hook(self.expiration_event, self.remove)
+
+    def remove(self, context):
         pass
 
 class ContinuousEffect(Effect):
