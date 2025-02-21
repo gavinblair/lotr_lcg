@@ -705,6 +705,10 @@ class Enemy(Card):
         game_state.staging_area.remove(self)
         player.engaged_enemies.append(self)
 
+class Phase(ABC):
+    def end(self, game_state):
+        game_state.event_system.trigger_event("EndOfPhase", {"game_state": game_state})
+
 class ResourcePhase:
     def execute(self, game_state, controller):
         console.rule("Resource Phase")
@@ -714,6 +718,7 @@ class ResourcePhase:
             player.refresh_resources()
                 
         game_state.event_system.trigger_event("ResourcePhaseEnd", game_state)
+        self.end(game_state)
 
     def render(self, game_state):
         for player in game_state.players:
@@ -779,6 +784,7 @@ class QuestPhase:
                         c.exhausted = True
         
         game_state.event_system.trigger_event("QuestPhaseEnd", game_state)
+        self.end(game_state)
 
     def commit_characters(controller, player):
         # Controller method
@@ -830,6 +836,7 @@ class PlanningPhase:
                 "controller": controller
             })
         game_state.event_system.trigger_event("PlanningPhaseEnd", game_state)
+        self.end(game_state)
     
     def render(self, game_state):
         pass
@@ -860,6 +867,7 @@ class TravelPhase:
                     )
         
         game_state.event_system.trigger_event("TravelPhaseEnd", game_state)
+        self.end(game_state)
     
     def render(self, game_state):
         pass
@@ -879,6 +887,7 @@ class EncounterPhase:
             self.handle_engagement(player, game_state)
         
         game_state.event_system.trigger_event("EncounterPhaseEnd", game_state)
+        self.end(game_state)
         
     def reveal_encounter_cards(self, game_state):
         # Implementation depends on your encounter deck setup
@@ -933,6 +942,7 @@ class CombatPhase:
                 self.resolve_player_attacks(player, game_state, controller)
         
         game_state.event_system.trigger_event("CombatPhaseEnd", game_state)
+        self.end(game_state)
         
     def resolve_enemy_attack(self, enemy, player, game_state, controller):
         game_state.event_system.trigger_event(
@@ -1065,6 +1075,8 @@ class RefreshPhase:
         game_state.active_player = game_state.players[new_idx]
         
         game_state.event_system.trigger_event("RefreshPhaseEnd", game_state)
+        self.end(game_state)
+        
         
     def ready_characters(self, player):
         for char in player.play_area['heroes'] + player.play_area['allies']:
