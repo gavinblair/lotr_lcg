@@ -402,17 +402,19 @@ class ContinuousEffect(Effect):
         self.modifier = modifier
 
 class StatModifierEffect(ContinuousEffect):
-    def __init__(self, attribute, modifier, duration):
-        super().__init__(duration)
+    def __init__(self, attribute, modifier, expiration_event=None):
+        super().__init__(expiration_event)
         self.attribute = attribute
         self.modifier = modifier
-        
+
     def apply(self, game_state, target):
         setattr(target, self.attribute, getattr(target, self.attribute) + self.modifier)
-        
-    def remove(self, game_state, target):
-        setattr(target, self.attribute, getattr(target, self.attribute) - self.modifier)
+        super().apply(game_state, target)  # Register for event-based expiration
 
+    def remove(self, context):
+        target = context.get('target')
+        if target:
+            setattr(target, self.attribute, getattr(target, self.attribute) - self.modifier)
 
 class Card(ABC):
     def __init__(self, title, cost, sphere):
