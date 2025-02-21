@@ -4,6 +4,12 @@ import random
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+from rich.console import Console, Group
+from rich.text import Text
+from rich.layout import Layout
+from rich.columns import Columns
+
+
 console = Console()
 
 class Player:
@@ -21,36 +27,20 @@ class Player:
         self.new_allies_this_round = []
         
     def render(self, game_state):
+        # Build list of renderables for the hand
+        hand_renderables = []
+        for i, card in enumerate(self.hand, 1):
+            hand_renderables.append(card.render_panel(in_hand=True, show_description=True))
+        
+        # Create Group with all renderables
+        hand_group = Group(*hand_renderables)
+        
         panel = Panel(
-            f"[b]Player:[/b] {self.name}\n"
-            f"[b]Deck:[/b] {len(self.deck)} cards\n"
-            f"[b]Discard:[/b] {len(self.discard_pile)} cards\n  ",
-            title=f":bust_in_silhouette: {self.name}",
+            hand_group,
+            title=f":bust_in_silhouette: {self.name}'s Hand",
             subtitle=f"Threat: [red]{self.threat}",
             expand=False
         )
-        console.print("Hand:")
-        for i, card in enumerate(self.hand, start=1):
-            colour = card.getColour()
-            # Show stats for Allies in hand
-            if isinstance(card, Ally):
-                details = f"{card.title} (Cost: {card.cost}, WP: {card.willpower}, A: {card.attack}, D: {card.defense}, HP: {card.hit_points})"
-            else:
-                details = f"{card.title} (Cost: {card.cost})"
-            console.print(f"\t{i}: [{colour}]{details}[/{colour}]")
-        console.print("Heroes:")
-        # Show detailed stats for Heroes
-        for idx, hero in enumerate(self.play_area['heroes'], start=1):
-            hero.render(game_state)
-            # colour = hero.getColour()
-            # console.print(f"\t{idx}: [{colour}]{hero.title}[/{colour}] (WP:{hero.willpower}, A:{hero.attack}, D:{hero.defense}, HP:{hero.hit_points})")
-        
-        console.print("Allies:")
-        # Show detailed stats for Allies in play
-        for idx, ally in enumerate(self.play_area['allies'], start=1):
-            colour = ally.getColour()
-            console.print(f"\t{idx}: [{colour}]{ally.title}[/{colour}] (WP:{ally.willpower}, A:{ally.attack}, D:{ally.defense}, HP:{ally.hit_points})")
-    
         console.print(panel)
     
     def draw_card(self, game_state, num=1):
@@ -208,7 +198,7 @@ class Game:
         
     def run(self):
         console.rule("Starting game!")
-        console.print(f"Active Quest: {self.game_state.active_quest.title}")
+        console.print(f"Active Quest: [yellow]{self.game_state.active_quest.title}[/yellow]")
         console.print(f"Required Progress: {self.game_state.active_quest.required_progress}")
         #first every player draw 5 cards
         
@@ -261,7 +251,7 @@ class GameState:
         console.print(f"Phase: {self.current_phase}")
         console.print(f"Quest Progress: {self.active_quest.progress}")
         console.print(f"Active Location: {self.active_location.title if self.active_location else 'None'}")
-        console.print(f"Staging Area: {[c.title for c in self.staging_area]}")
+        console.print(f"Staging Are🗡️ {[c.title for c in self.staging_area]}")
         console.print(f"Encounter Deck: {len(self.encounter_deck)} cards")
         # console.print(f"Victory Display: {[c.title for c in self.victory_display]}")
         
@@ -291,10 +281,89 @@ class GameController:
         self.game = game
         self.current_choices = []
         
-    def display_game_state(self, player):
-        """Show current game state to player"""
-        player.render(self.game.game_state)
+    def display_game_state(self):
+        # Render active quest and location
+        active_quest_panel = Panel(
+            f"[yellow]{self.game.game_state.active_quest.title}[/yellow]",
+            title=":scroll: Active Quest",
+            subtitle=f"[white]{self.game.game_state.active_quest.progress}[white]/[white]{self.game.game_state.active_quest.required_progress}",
+            expand=False
+        )
+        console.print(active_quest_panel)
+
+        # Render staging area
+        staging_area_panel = Panel(
+            "\n".join([f"{card.title} (Threat: {card.threat})" for card in self.game.game_state.staging_area]),
+            title=":crossed_swords: Staging Area",
+            expand=False
+        )
+        console.print(staging_area_panel, style="on #220000")
         
+        # Render each player's play area and engaged enemies
+        for p in self.game.game_state.players:
+
+            play_area_panels = []
+
+            engaged_enemies_panel = Panel(
+                "\n".join([f"{enemy.title} (💪{enemy.attack}, ✋{enemy.defense}, ❤️{enemy.hit_points})" for enemy in p.engaged_enemies]),
+                title=f":japanese_ogre: {p.name}'s Engaged Enemies",
+                expand=False,
+                style="on #220000"
+            )
+            play_area_panels.append(engaged_enemies_panel)
+            for card in p.play_area['heroes'] + p.play_area['allies']:
+                card_panel = card.render_panel()
+                play_area_panels.append(card_panel)
+
+            if play_area_panels:
+                columns = Columns(play_area_panels, equal=True) # equal=True ensures they have equal width
+                play_area_panel = Panel(
+                    columns,
+                    title=f":bust_in_silhouette: {p.name}'s Play Area",
+                    expand=False
+                )
+                console.print(play_area_panel, style="on #222222")
+            else:
+                empty_panel = Panel("[italic]No cards in play area[/italic]", title=f":bust_in_silhouette: {p.name}'s Play Area", expand=False)
+                console.print(empty_panel)
+
+        
+        if self.game.game_state.active_location:
+            active_location_panel = Panel(
+                f"{self.game.game_state.active_location.title}\nProgress: {self.game.game_state.active_location.progress}/{self.game.game_state.active_location.quest_points}",
+                title=":round_pushpin: Active Location",
+                expand=False
+            )
+            console.print(active_location_panel)
+        
+    def inspect_card(self):
+        card_name = input("Enter card name to inspect: ")
+        card = self.find_card(card_name)
+        if card:
+            console.print(card.render_panel(show_description=True))
+        else:
+            console.print(f"[red]Card '{card_name}' not found!")
+
+    def find_card(self, name):
+        # Search all game zones
+        zones = [
+            *self.game.game_state.encounter_deck,
+            *self.game.game_state.encounter_discard,
+            *self.game.game_state.staging_area,
+            *self.game.game_state.victory_display
+        ]
+        
+        for player in self.game.game_state.players:
+            zones.extend([
+                *player.hand,
+                *player.deck,
+                *player.discard_pile,
+                *player.play_area['heroes'],
+                *player.play_area['allies']
+            ])
+            
+        return next((c for c in zones if c.title.lower() == name.lower()), None)
+
     def choose_player(self, players):
         """Let player choose from available players"""
         options = [p.name for p in players]
@@ -318,31 +387,42 @@ class GameController:
             console.log("Invalid choice, try again")
 
     def choose_card_to_play(self, player):
-        playable = [c for c in player.hand if player.can_afford(c.cost, c.sphere)]
-        if not playable:
-            return None
+        while True:
+            # Show all cards in hand with basic info
+            options = []
+            for i, card in enumerate(player.hand, 1):
+                option = f"{i}. {card.title} ({card.cost} {card.sphere})"
+                options.append(option)
+            options.append("Pass")
             
-        self.display_game_state(player)
-        options = []
-        for c in playable:
-            # Include stats for Allies in the playable options
-            if isinstance(c, Ally):
-                option = f"{c.title} (Cost: {c.cost} {c.sphere}, WP: {c.willpower}, A: {c.attack}, D: {c.defense}, HP: {c.hit_points})"
+            # Get initial card selection
+            choice = self.get_choice("Choose a card to view or Pass:", options)
+            if choice == len(options)-1:
+                return None  # Player chose Pass
+            
+            selected_card = player.hand[choice]
+            
+            # Show detailed card view
+            console.clear()
+            console.print(selected_card.render_panel(in_hand=False, show_description=True))
+            
+            # Check if playable
+            if player.can_afford(selected_card.cost, selected_card.sphere):
+                play_choice = self.get_choice(
+                    f"Play {selected_card.title}? (Cost: {selected_card.cost} {selected_card.sphere})", 
+                    ["Play", "Back to hand"]
+                )
+                if play_choice == 0:
+                    return selected_card
             else:
-                option = f"{c.title} ({c.cost} {c.sphere})"
-            options.append(option)
-        options.append("Pass")
-        choice_idx = self.get_choice("Choose a card to play:", options)
-        
-        if choice_idx == len(options) - 1:  # "Pass" selected
-            return None
-        return playable[choice_idx]
+                console.print(f"[red]Can't afford {selected_card.title}![/red]")
+                input("Press Enter to continue...")
 
     def choose_defender(self, player, enemy, valid_defenders):
         """Let player choose defender for an attack"""
         
-        self.display_game_state(player)
-        options = [f"{c.title} (Defense: {c.defense})" for c in valid_defenders] + ["No defender"]
+        player.render(self.game.game_state)
+        options = [f"{c.title} (✋{c.defense})" for c in valid_defenders] + ["No defender"]
         choice = self.get_choice(f"Choose defender against {enemy.title}:", options)
         
         if choice == "No defender":
@@ -350,7 +430,7 @@ class GameController:
         return valid_defenders[options.index(choice)]
 
     def choose_enemy_to_attack(self, player, enemies):
-        options = [f"{e.title} (HP: {e.hit_points})" for e in enemies] + ["Pass"]
+        options = [f"{e.title} (💖 {e.hit_points})" for e in enemies] + ["Pass"]
         choice = self.get_choice("Choose enemy to attack:", options)
         return enemies[choice] if choice != "Pass" else None
 
@@ -441,6 +521,50 @@ class Card(ABC):
         elif self.sphere == 'Neutral':
             return 'white'
         return 'yellow'
+    
+    def render_panel(self, in_hand=False, show_description=True):
+        color = self.getColour()
+        title = f"{self.title}"
+        
+        # Always show cost/sphere when in hand
+        if in_hand:
+            title += f" (Cost: {self.cost} {self.sphere})"
+        
+        # Create main panel components
+        panel_elements = [Text(title)]
+        
+        # Show full description when viewing
+        if show_description and self.description:
+            panel_elements.append(Panel.fit(self.description, border_style=color))
+        
+        # Add type-specific stats
+        stats_text = Text()
+        if isinstance(self, (Hero, Ally, Enemy)):
+            stats = []
+            if hasattr(self, 'willpower'):
+                stats.append(f"😤 {self.willpower}")
+            if hasattr(self, 'attack'):
+                stats.append(f"💪 {self.attack}")
+            if hasattr(self, 'defense'):
+                stats.append(f"✋ {self.defense}")
+            if hasattr(self, 'hit_points'):
+                stats.append(f"💖 {self.hit_points}")
+            
+            # Join stats into a single line
+            stats_line = " ".join(stats)
+            stats_text.append(stats_line)
+            
+            if hasattr(self, 'keywords') and self.keywords:
+                keywords_str = ", ".join(self.keywords)
+                stats_text.append(f"\n{keywords_str}") #keywords on a new line.
+        
+        panel_elements.append(stats_text)
+        
+        return Panel(
+            Group(*panel_elements),
+            border_style=color,
+            expand=False
+        )
         
     def render(self, game_state):  # User-friendly representation
         console.print(f"Title: {self.title}")
@@ -544,18 +668,28 @@ class Hero(Card):
         
     def on_exhaust(self):
         pass
-            
-    def render(self, game_state):  # todo: i want to be able to print any of these classes and get something useful back, like this:
-        exhausted = ""
-        if({self.exhausted}):
-            exhausted = "[orange](Exhausted)"
-        console.print(f"[{self.getColour()}]{self.title} ({self.sphere})[/{self.getColour()}] {exhausted}")
-        console.print(f"WP: {self.willpower}, A: {self.attack}, D: {self.defense}, HP: {self.hit_points}")
-        for sphere in self.resources:
-            console.print(f"\t[{self.getColour()}]{sphere} Resources[/{self.getColour()}]: {self.resources[sphere]}")
-        for attachment in self.attachments:
-            console.print(f"\t{attachment.title}")
 
+    def render_panel(self, in_hand=False, show_description=True):
+        base_panel = super().render_panel(in_hand, show_description)
+        # Add hero-specific status
+        status = []
+        if self.exhausted:
+            status.append("[orange]Exhausted[/orange]")
+        if self.committed:
+            status.append("[green]Committed[/green]")
+
+        for sphere in self.resources:
+            status.append(f"\t{sphere} Resources: {self.resources[sphere]}")
+        for attachment in self.attachments:
+            status.append(f"\t{attachment.title}")
+
+        if status:
+            return Panel(
+                Group(base_panel, Text(" ".join(status))),
+                border_style=self.getColour()
+            )
+        return base_panel
+            
 class ResourceAttachment(Card):
     def __init__(self, title, sphere, resource_type):
         super().__init__(title, 2, sphere)
@@ -624,6 +758,13 @@ class Location(Card):
             self.on_explored(game_state)
             return True  # Location explored
         return False
+
+    def render_panel(self, in_hand=False, show_description=True):
+        panel = super().render_panel(in_hand, show_description)
+        progress_bar = Text(
+            f"Progress: {'■' * self.progress}{'□' * (self.quest_points - self.progress)}"
+        )
+        return Panel(Group(panel, progress_bar), border_style=self.getColour())
 
 class Attachment(Card):
     def __init__(self, title, cost, sphere):
@@ -709,32 +850,30 @@ class Phase(ABC):
     def end(self, game_state):
         game_state.event_system.trigger_event("EndOfPhase", {"game_state": game_state})
 
-class ResourcePhase:
+class ResourcePhase(Phase):
     def execute(self, game_state, controller):
         console.rule("Resource Phase")
         game_state.event_system.trigger_event("ResourcePhaseStart", game_state)
+        controller.display_game_state()
         
         for player in game_state.players:
+            console.print(f"Refreshing [yellow]{player.name}...")
             player.refresh_resources()
                 
         game_state.event_system.trigger_event("ResourcePhaseEnd", game_state)
         self.end(game_state)
 
     def render(self, game_state):
-        for player in game_state.players:
-            console.print(f"Player: [yellow]{player.name}")
-            for hero in player.play_area['heroes']:
-                console.print(f"[{hero.getColour()}]{hero.title}[/{hero.getColour()}]")
-                for sphere in hero.resources:
-                    console.print(f"\t[{hero.getColour()}]{sphere}[/{hero.getColour()}]: {hero.resources[sphere]}")
+        pass
 
-class QuestPhase:
+class QuestPhase(Phase):
     def execute(self, game_state, controller):
         console.rule("Quest Phase")
         if not game_state.active_quest:
             console.log("No active quest!")
             return
         game_state.event_system.trigger_event("QuestPhaseStart", game_state)
+        controller.display_game_state()
         
         # Commit characters and handle exhaustion
         contributors = []
@@ -803,15 +942,14 @@ class QuestPhase:
     def render(self, game_state):
         pass
 
-class PlanningPhase:
+class PlanningPhase(Phase):
     def execute(self, game_state, controller):
         console.rule("Planning Phase")
         game_state.event_system.trigger_event("PlanningPhaseStart", game_state)
+        controller.display_game_state()
         for player in game_state.players:
             while True:
-                # Show game state before each decision
-                controller.display_game_state(player)
-                
+                player.render(game_state)
                 # Get player's choice
                 card = player.select_card_to_play(controller)
                 if not card:
@@ -841,11 +979,12 @@ class PlanningPhase:
     def render(self, game_state):
         pass
 
-class TravelPhase:
+class TravelPhase(Phase):
     def execute(self, game_state, controller):
         console.rule("Travel Phase")
 
         game_state.event_system.trigger_event("TravelPhaseStart", game_state)
+        controller.display_game_state()
         
         # Players may travel to a location
         if game_state.active_location is None:
@@ -872,11 +1011,12 @@ class TravelPhase:
     def render(self, game_state):
         pass
 
-class EncounterPhase:
+class EncounterPhase(Phase):
     def execute(self, game_state, controller):
         console.rule("Encounter Phase")
 
         game_state.event_system.trigger_event("EncounterPhaseStart", game_state)
+        controller.display_game_state()
         
         # Reveal encounter cards
         revealed_cards = self.reveal_encounter_cards(game_state)
@@ -925,11 +1065,12 @@ class EncounterPhase:
 # Surge: Draw an extra encounter card.
 # Time X: Puts time counters on a card, which are removed each round.
 # Victory: Awards victory points when a card is defeated.
-class CombatPhase:
+class CombatPhase(Phase):
     def execute(self, game_state, controller):
         console.rule("Combat Phase")
 
         game_state.event_system.trigger_event("CombatPhaseStart", game_state)
+        controller.display_game_state()
         
         # First resolve enemy attacks
         for player in game_state.players:
@@ -1050,11 +1191,12 @@ class CombatPhase:
     def render(self, game_state):
         pass
 
-class RefreshPhase:
+class RefreshPhase(Phase):
     def execute(self, game_state, controller):
         console.rule("Refresh Phase")
 
         game_state.event_system.trigger_event("RefreshPhaseStart", game_state)
+        controller.display_game_state()
         
         # Ready all cards
         for player in game_state.players:
