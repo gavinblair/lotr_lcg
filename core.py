@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 import random
 from rich.console import Console
+from rich.table import Table
 from rich.panel import Panel
 console = Console()
 
@@ -20,13 +21,37 @@ class Player:
         self.new_allies_this_round = []
         
     def render(self, game_state):
-        console.print(f"Player: {self.name}")
-        console.print(f"Threat: {self.threat}")
-        console.print(f"Hand: {[c.title for c in self.hand]}")
-        console.print(f"Deck: {len(self.deck)} cards")
-        console.print(f"Discard: {len(self.discard_pile)} cards")
-        console.print(f"Heroes: {[h.title for h in self.play_area['heroes']]}")
-        console.print(f"Allies: {[a.title for a in self.play_area['allies']]}")
+        panel = Panel(
+            f"[b]Player:[/b] {self.name}\n"
+            f"[b]Deck:[/b] {len(self.deck)} cards\n"
+            f"[b]Discard:[/b] {len(self.discard_pile)} cards\n  ",
+            title=f":bust_in_silhouette: {self.name}",
+            subtitle=f"Threat: [red]{self.threat}",
+            expand=False
+        )
+        console.print("Hand:")
+        for i, card in enumerate(self.hand, start=1):
+            colour = card.getColour()
+            # Show stats for Allies in hand
+            if isinstance(card, Ally):
+                details = f"{card.title} (Cost: {card.cost}, WP: {card.willpower}, A: {card.attack}, D: {card.defense}, HP: {card.hit_points})"
+            else:
+                details = f"{card.title} (Cost: {card.cost})"
+            console.print(f"\t{i}: [{colour}]{details}[/{colour}]")
+        console.print("Heroes:")
+        # Show detailed stats for Heroes
+        for idx, hero in enumerate(self.play_area['heroes'], start=1):
+            hero.render(game_state)
+            # colour = hero.getColour()
+            # console.print(f"\t{idx}: [{colour}]{hero.title}[/{colour}] (WP:{hero.willpower}, A:{hero.attack}, D:{hero.defense}, HP:{hero.hit_points})")
+        
+        console.print("Allies:")
+        # Show detailed stats for Allies in play
+        for idx, ally in enumerate(self.play_area['allies'], start=1):
+            colour = ally.getColour()
+            console.print(f"\t{idx}: [{colour}]{ally.title}[/{colour}] (WP:{ally.willpower}, A:{ally.attack}, D:{ally.defense}, HP:{ally.hit_points})")
+    
+        console.print(panel)
     
     def draw_card(self, game_state, num=1):
         for _ in range(num):
@@ -58,7 +83,7 @@ class Player:
         """Update threat based on heroes' threat costs"""
         self.threat = sum(hero.threat_cost for hero in self.play_area['heroes'])
         
-    def play_card(self, card, game_state):
+    def play_card(self, card, game_state, controller):
         if self.can_afford(card.cost, card.sphere):
             game_state.event_system.trigger_event("BeforeAnyCardPlayed", {"card": card, "player": self})
             self.deduct_resources(card.cost, card.sphere, game_state)
@@ -78,7 +103,7 @@ class Player:
             elif isinstance(card, Event):
                 self.discard_pile.append(card)  # Events go to discard after play
             
-            card.play(game_state, self.controller)
+            card.play(game_state, controller)
             game_state.event_system.trigger_event(f"AfterCardPlayed", {"card": card, "player": self})
 
             
@@ -267,21 +292,9 @@ class GameController:
         self.current_choices = []
         
     def display_game_state(self, player):
-        self.game.game_state.render()
         """Show current game state to player"""
-        console.rule(f"[yellow]{player.name}[/yellow]'s Turn")
-        console.print(f"Threat: [red]{player.threat}[/red]")
-        console.print("Hand:")
-        for i,card in enumerate(player.hand, start=1):
-            colour = f"{card.getColour()}"
-            console.print(f"\t{i}): [{colour}]{card.title}[/{colour}]")
-        console.print("Heroes:")
-        for h,hero in enumerate(player.play_area['heroes'], start=i):
-            colour = f"{card.getColour()}"
-            console.print(f"\t{h}): [{hero.getColour()}]{hero.title}[/{hero.getColour()}] (WP:{hero.willpower})")
-        console.log("Allies:", [a.title for a in player.play_area['allies']])
+        player.render(self.game.game_state)
         
-    
     def choose_player(self, players):
         """Let player choose from available players"""
         options = [p.name for p in players]
@@ -301,22 +314,29 @@ class GameController:
                     return indices
             else:
                 if choice.isdigit() and 1 <= int(choice) <= len(options):
-                    return [int(choice)-1]
+                    return int(choice)-1
             console.log("Invalid choice, try again")
 
     def choose_card_to_play(self, player):
-        """Let player select a card to play or pass"""
         playable = [c for c in player.hand if player.can_afford(c.cost, c.sphere)]
         if not playable:
             return None
             
         self.display_game_state(player)
-        options = [f"{c.title} ({c.cost} {c.sphere})" for c in playable] + ["Pass"]
-        choice = self.get_choice("Choose a card to play:", options)
+        options = []
+        for c in playable:
+            # Include stats for Allies in the playable options
+            if isinstance(c, Ally):
+                option = f"{c.title} (Cost: {c.cost} {c.sphere}, WP: {c.willpower}, A: {c.attack}, D: {c.defense}, HP: {c.hit_points})"
+            else:
+                option = f"{c.title} ({c.cost} {c.sphere})"
+            options.append(option)
+        options.append("Pass")
+        choice_idx = self.get_choice("Choose a card to play:", options)
         
-        if choice == "Pass":
+        if choice_idx == len(options) - 1:  # "Pass" selected
             return None
-        return playable[options.index(choice)]
+        return playable[choice_idx]
 
     def choose_defender(self, player, enemy, valid_defenders):
         """Let player choose defender for an attack"""
@@ -392,6 +412,7 @@ class StatModifierEffect(ContinuousEffect):
     def remove(self, game_state, target):
         setattr(target, self.attribute, getattr(target, self.attribute) - self.modifier)
 
+
 class Card(ABC):
     def __init__(self, title, cost, sphere):
         self.title = title
@@ -414,6 +435,8 @@ class Card(ABC):
             return 'blue'
         elif self.sphere == 'Lore':
             return 'green'
+        elif self.sphere == 'Neutral':
+            return 'white'
         return 'yellow'
         
     def render(self, game_state):  # User-friendly representation
@@ -464,6 +487,10 @@ class QuestCard(Card):
         self.progress = 0
         self.is_active = False
 
+# todo: Character Keywords:
+# Unique: As discussed, only one copy of a Unique card with the same title can be in play at a time.
+# Restricted: Limits the number of powerful attachments a character can have.
+
 class Ally(Card):
     def __init__(self, title, cost, sphere, willpower, attack, defense, hit_points):
         super().__init__(title, cost, sphere)
@@ -484,6 +511,7 @@ class Ally(Card):
             {"ally": self, "player": self.parent}
         )
 
+#todo: heroes are characters too, so the character keywords apply to heroes as well
 class Hero(Card):
     def __init__(self, title, sphere, threat_cost, willpower, attack, defense, hit_points):
         super().__init__(title, 0, sphere)
@@ -508,17 +536,22 @@ class Hero(Card):
     def refresh_resources(self):
         # Generate 1 resource per round
         #stop suggesting that getting resources from a hero exhausts the hero. it does not.
-        console.log(f"Adding 1 [{self.getColour()}]{self.sphere}[/{self.getColour()}] resource to {self.title}")
+        console.print(f"Adding 1 [{self.getColour()}]{self.sphere}[/{self.getColour()}] resource to {self.title}")
         self.resources[self.sphere] += 1
         
     def on_exhaust(self):
         pass
             
     def render(self, game_state):  # todo: i want to be able to print any of these classes and get something useful back, like this:
-        console.print(f"Hero: {self.title}")
-        console.print(f"[{self.getColour()}]{self.sphere}[/{self.getColour()}]")
-        console.print(f"Willpower: {self.willpower} | Attack: {self.attack} | Defense: {self.defense} | Hit Points: {self.hit_points}")
-        console.print(f"Resources: {self.resources}, Exhausted: {self.exhausted})")
+        exhausted = ""
+        if({self.exhausted}):
+            exhausted = "[orange](Exhausted)"
+        console.print(f"[{self.getColour()}]{self.title} ({self.sphere})[/{self.getColour()}] {exhausted}")
+        console.print(f"WP: {self.willpower}, A: {self.attack}, D: {self.defense}, HP: {self.hit_points}")
+        for sphere in self.resources:
+            console.print(f"\t[{self.getColour()}]{sphere} Resources[/{self.getColour()}]: {self.resources[sphere]}")
+        for attachment in self.attachments:
+            console.print(f"\t{attachment.title}")
 
 class ResourceAttachment(Card):
     def __init__(self, title, sphere, resource_type):
@@ -616,7 +649,7 @@ class Attachment(Card):
                 targets += card.attachments  # Attach to other attachments?
         # Encounter cards
         targets += game_state.staging_area
-        return [t for t in targets if self.can_attach_to(t)]
+        return [t for t in targets if self.can_attach_to(t,game_state)]
 
         
     def get_player_cards(self, player):
@@ -642,15 +675,7 @@ class Attachment(Card):
         self.attached_to = target
         target.attachments.append(self)
         self.parent = target
-        
-        # Move attachment to parent's zone
-        if isinstance(target.parent, Player):
-            #todo: it should be on the card, not the play area
-            target.parent.play_area['attachments'].append(self)
-        else:
-            #todo: attachments go on cards, not on the play area or staging area
-            game_state.staging_area.append(self)
-            
+                
         self.on_attach(game_state)
         #todo: hook for "after adding an attachment to a character"
         
@@ -689,11 +714,11 @@ class ResourcePhase:
 
     def render(self, game_state):
         for player in game_state.players:
-            console.print(f"Player: {player.name}")
+            console.print(f"Player: [yellow]{player.name}")
             for hero in player.play_area['heroes']:
-                console.print(f"[{hero.getColour()}]{hero.title}[/{hero.getColour()}]:")
+                console.print(f"[{hero.getColour()}]{hero.title}[/{hero.getColour()}]")
                 for sphere in hero.resources:
-                    console.print(f"[{hero.getColour()}]{sphere}[/{hero.getColour()}]: {hero.resources[sphere]}")
+                    console.print(f"\t[{hero.getColour()}]{sphere}[/{hero.getColour()}]: {hero.resources[sphere]}")
 
 class QuestPhase:
     def execute(self, game_state, controller):
@@ -784,7 +809,7 @@ class PlanningPhase:
                     break  # Player chooses to stop playing cards
                     
                 if player.can_afford(card.cost, card.sphere):
-                    player.play_card(card, game_state)
+                    player.play_card(card, game_state, controller)
                     if isinstance(card, Ally):
                         game_state.event_system.trigger_event(
                             "AfterAllyPlayed",
@@ -877,6 +902,17 @@ class EncounterPhase:
                 )
     def render(self, game_state):
         pass
+
+# todo: Combat Keywords:
+# Ranged: Allows a character to attack enemies engaged with other players.
+# Sentinel: Allows a character to defend an attack against another player's hero.
+# Guard: Forces enemies to attack the character with Guard first.
+# Stealth: Makes a character untargetable by enemies until revealed.
+# Ambush: Allows an enemy to make an immediate attack when revealed.
+# Doomed: Forces all players to raise their threat level.
+# Surge: Draw an extra encounter card.
+# Time X: Puts time counters on a card, which are removed each round.
+# Victory: Awards victory points when a card is defeated.
 class CombatPhase:
     def execute(self, game_state, controller):
         console.rule("Combat Phase")

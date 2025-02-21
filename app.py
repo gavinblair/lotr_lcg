@@ -2,25 +2,25 @@ from core import *
 from quests import *
 from gavs_deck import *
 from rich.console import Console
+import random
 console = Console()
 
 if __name__ == "__main__":
-  gav = Player("gav")
-  ai = Player("ai")
-  boromir = Boromir()
-  galadriel = Galadriel()
-  gav.play_area['heroes'].extend([boromir, galadriel])
+  gav = Player("Gavin")
+  
+  gav.play_area['heroes'] = [
+    Boromir(),
+    Galadriel(),
+    Aragorn()
+  ]
   gav.calculate_threat()
-
-  ai.play_area['heroes'].extend([galadriel])
-  ai.calculate_threat()
-  
+  gav.deck = [
+    Faramir(),Faramir(),Faramir(),
+    Gandalf(),Gandalf(),Gandalf(),
+    StewardOfGondor(),StewardOfGondor(),StewardOfGondor(),
+    UnexpectedCourage(),UnexpectedCourage(),UnexpectedCourage()
+  ]
+  random.shuffle(gav.deck)
   # Create game with player
-  game = Game([gav, ai], FleeingFromMirkwood())
-  
-  # Add some test cards to deck
-  test_ally = Ally("Gondor Soldier", 2, "Leadership", 1, 2, 1, 3)
-  gav.deck = [test_ally] * 20  # Fill deck with dummy cards
-  ai.deck = [test_ally] * 20  # Fill deck with dummy cards
-  
+  game = Game([gav], FleeingFromMirkwood())
   game.run()

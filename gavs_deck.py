@@ -193,3 +193,8 @@ class UnexpectedCourage(Attachment):
                 self.exhausted = True
                 attached_hero = self.attached_to
                 attached_hero.exhausted = False
+
+# todo: Keywords:
+# Fleeting: Cards with Fleeting are removed from play at the end of the round.
+# Preparation: Cards that are played but their effect doesn't trigger until a certain condition is met.
+# Revenge: An effect that triggers when a card is defeated.
