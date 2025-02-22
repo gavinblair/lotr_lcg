@@ -391,7 +391,7 @@ class GameController:
             # Show all cards in hand with basic info
             options = []
             for i, card in enumerate(player.hand, 1):
-                option = f"{i}. {card.title} ({card.cost} {card.sphere})"
+                option = f"{card.title} ({card.cost} {card.sphere})"
                 options.append(option)
             options.append("Pass")
             
@@ -852,9 +852,10 @@ class Phase(ABC):
 
 class ResourcePhase(Phase):
     def execute(self, game_state, controller):
-        console.rule("Resource Phase")
+        
         game_state.event_system.trigger_event("ResourcePhaseStart", game_state)
         controller.display_game_state()
+        console.rule("Resource Phase")
         
         for player in game_state.players:
             console.print(f"Refreshing [yellow]{player.name}...")
@@ -868,12 +869,14 @@ class ResourcePhase(Phase):
 
 class QuestPhase(Phase):
     def execute(self, game_state, controller):
+        
+        
+        game_state.event_system.trigger_event("QuestPhaseStart", game_state)
+        controller.display_game_state()
         console.rule("Quest Phase")
         if not game_state.active_quest:
             console.log("No active quest!")
             return
-        game_state.event_system.trigger_event("QuestPhaseStart", game_state)
-        controller.display_game_state()
         
         # Commit characters and handle exhaustion
         contributors = []
@@ -944,9 +947,10 @@ class QuestPhase(Phase):
 
 class PlanningPhase(Phase):
     def execute(self, game_state, controller):
-        console.rule("Planning Phase")
+        
         game_state.event_system.trigger_event("PlanningPhaseStart", game_state)
         controller.display_game_state()
+        console.rule("Planning Phase")
         for player in game_state.players:
             while True:
                 player.render(game_state)
@@ -981,10 +985,11 @@ class PlanningPhase(Phase):
 
 class TravelPhase(Phase):
     def execute(self, game_state, controller):
-        console.rule("Travel Phase")
+        
 
         game_state.event_system.trigger_event("TravelPhaseStart", game_state)
         controller.display_game_state()
+        console.rule("Travel Phase")
         
         # Players may travel to a location
         if game_state.active_location is None:
@@ -1013,10 +1018,11 @@ class TravelPhase(Phase):
 
 class EncounterPhase(Phase):
     def execute(self, game_state, controller):
-        console.rule("Encounter Phase")
+        
 
         game_state.event_system.trigger_event("EncounterPhaseStart", game_state)
         controller.display_game_state()
+        console.rule("Encounter Phase")
         
         # Reveal encounter cards
         revealed_cards = self.reveal_encounter_cards(game_state)
@@ -1067,10 +1073,11 @@ class EncounterPhase(Phase):
 # Victory: Awards victory points when a card is defeated.
 class CombatPhase(Phase):
     def execute(self, game_state, controller):
-        console.rule("Combat Phase")
+        
 
         game_state.event_system.trigger_event("CombatPhaseStart", game_state)
         controller.display_game_state()
+        console.rule("Combat Phase")
         
         # First resolve enemy attacks
         for player in game_state.players:
@@ -1193,10 +1200,11 @@ class CombatPhase(Phase):
 
 class RefreshPhase(Phase):
     def execute(self, game_state, controller):
-        console.rule("Refresh Phase")
+        
 
         game_state.event_system.trigger_event("RefreshPhaseStart", game_state)
         controller.display_game_state()
+        console.rule("Refresh Phase")
         
         # Ready all cards
         for player in game_state.players:
